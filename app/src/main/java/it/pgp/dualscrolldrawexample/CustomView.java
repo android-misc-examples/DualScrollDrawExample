@@ -4,6 +4,7 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.Point;
+import android.provider.Settings;
 import android.text.Layout;
 import android.text.StaticLayout;
 import android.text.TextPaint;
@@ -23,58 +24,51 @@ public class CustomView extends View implements View.OnTouchListener {
     final Paint bgpaint = new Paint();
     final TextPaint txtpaint = new TextPaint();
 
-    public static final int MIN = 0;
-    public static final int MAX = 10000;
+    public static final int VMIN = 0;
+    public static final int VMAX = 255;
+    public static final int HMIN = 0;
+    public static final int HMAX = 10000;
 
     int current_v = 0;
-    int k0_v = 0; // this should be taken as current brightness level on start
+    int k0_v; // taken as current brightness level on start
 
     int current_h = 0;
     int k0_h = 0;
 
     int multiplier = 1;
 
+    public final int savedBrightness;
+
+    private void setBrightness(int b) {
+        try {
+            Settings.System.putInt(getContext().getContentResolver(),
+                    Settings.System.SCREEN_BRIGHTNESS, b);
+        }
+        catch(Exception ignored) {}
+    }
+
+    public void restoreBrightness() {
+        setBrightness(savedBrightness);
+    }
+
     public void setCurrentLevel(ScrollMode scrollMode) {
         switch(scrollMode) {
             case VERTICAL:
                 float tmp = k0_v + multiplier*((y0-y)/H)*100; // doing y0-y instead of y-y0 due to top-to-bottom vertical coordinate system on Android
                 current_v = (int) tmp;
-                if(current_v < MIN) current_v = MIN;
-                else if(current_v > MAX) current_v = MAX;
+                if(current_v < VMIN) current_v = VMIN;
+                else if(current_v > VMAX) current_v = VMAX;
+                setBrightness(current_v);
                 break;
             case HORIZONTAL:
                 tmp = k0_h + multiplier*((x-x0)/W)*100;
                 current_h = (int) tmp;
-                if(current_h < MIN) current_h = MIN;
-                else if(current_h > MAX) current_h = MAX;
+                if(current_h < HMIN) current_h = HMIN;
+                else if(current_h > HMAX) current_h = HMAX;
                 break;
             default:
                 throw new RuntimeException("ARGH");
         }
-    }
-
-    double atan2approximatingLineNPoints(List<Point> lp1) {
-        // preliminary, convert y coordinates of the points
-        List<Point> lp = new ArrayList<>(lp1);
-        for(Point p : lp) {
-            p.y = (int) (H-p.y);
-        }
-        int n = lp.size();
-        float m, c, sum_x = 0, sum_y = 0, sum_xy = 0, sum_x2 = 0;
-        for (int i = 0; i < n; i++) {
-            Point p = lp.get(i);
-            sum_x += p.x;
-            sum_y += p.y;
-            sum_xy += p.x * p.y;
-            sum_x2 += p.x * p.x;
-        }
-
-        m = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x*sum_x);
-        c = (sum_y - m * sum_x) / n;
-
-        // sample two points and compute atan2
-        // y1 = m*0 + c      y2 = m*1 + c
-        return atan2pd(m,0);
     }
 
     public void doDraw(Canvas canvas) {
@@ -85,7 +79,7 @@ public class CustomView extends View implements View.OnTouchListener {
                 float cx = W / 4;
                 float cx1 = cx + 100;
                 sl.draw(canvas);
-                canvas.restore();
+//                canvas.restore();
                 canvas.drawRect(cx,y,cx1,y+100,getBgPaint());
                 break;
             case HORIZONTAL:
@@ -93,7 +87,7 @@ public class CustomView extends View implements View.OnTouchListener {
                 float cy = H / 4;
                 float cy1 = cy + 100;
                 sl.draw(canvas);
-                canvas.restore();
+//                canvas.restore();
                 canvas.drawRect(x,cy,x+100,cy1,getBgPaint());
                 break;
             default:
@@ -162,20 +156,7 @@ public class CustomView extends View implements View.OnTouchListener {
                 switch(scrollMode) {
                     case OFF:
                         if(setupPoints.size()==N_SETUP_POINTS) {
-                                    /*// compute mean of atan2 and decide move direction
-                                    double at2 = 0;
-                                    Point p0 = setupPoints.get(0);
-                                    for(int ii=1;ii<setupPoints.size();ii++) {
-                                        Point p = setupPoints.get(ii);
-                                        at2 += atan2pd(p0.y-p.y, p.x-p0.x);
-                                    }
-                                    at2 /= (N_SETUP_POINTS-1);*/
-
-
-//                                    double at2 = atan2approximatingLineNPoints(setupPoints);
-
-
-                            // compute mean of atan2 and decide move direction
+                            // compute atan2 of segment between first and last sampled setup point, and decide move direction
                             Point p0 = setupPoints.get(0);
                             Point pN = setupPoints.get(setupPoints.size()-1);
                             double at2 = atan2pd(p0.y-pN.y, pN.x-p0.x);
@@ -226,6 +207,16 @@ public class CustomView extends View implements View.OnTouchListener {
         H = dm.heightPixels;
 
         setOnTouchListener(this);
+
+        int b;
+        try {
+            b = Settings.System.getInt(context.getContentResolver(), Settings.System.SCREEN_BRIGHTNESS, 0);
+        }
+        catch(Exception ignored) {
+            b = -1;
+        }
+        savedBrightness = b;
+        if(savedBrightness >= 0) k0_v = savedBrightness;
     }
 
     @Override
